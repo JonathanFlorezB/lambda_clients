@@ -8,7 +8,8 @@ from app.db_utils import (
     get_client_info,
     get_paginated_data,
     validate_and_process_client_data,
-    validate_data
+    validate_data,
+    update_contactabilidad_requerido
 )
 from app.db_connection import conexion_bd
 from app.shared_utils import build_response
@@ -76,6 +77,8 @@ def handle_main_request(event, method, path):
             return handle_client_info_resources(cursor, event, method, path_parts, resource)
         elif resource == "clientes":
             return handle_clientes_resource(conn, cursor, event, method, path_parts)
+        elif resource == "contactabilidad":
+            return handle_contactabilidad_resource(conn, cursor, event, method, path_parts)
         
         return build_response(404, {'mensaje': RESOURCE_NOT_FOUND_MSG})
 
@@ -156,6 +159,34 @@ def handle_validation_post(cursor, body_str):
     }
     status_code = 200 if valid_count > 0 or not errors else 400
     return build_response(status_code, response_body)
+
+def handle_contactabilidad_resource(conn, cursor, event, method, path_parts):
+    """Maneja las solicitudes para el recurso de contactabilidad."""
+    if method == 'PATCH' and len(path_parts) == 3 and path_parts[2] == 'requerido':
+        id_cliente = path_parts[1]
+        body = json.loads(event.get('body', '{}'))
+        requerido = body.get('requerido')
+
+        if not id_cliente:
+            return build_response(400, {'mensaje': 'Se requiere id_cliente en la URL.'})
+        try:
+            uuid.UUID(id_cliente)
+        except ValueError:
+            return build_response(400, {'mensaje': 'ID de cliente no válido.'})
+
+        if not isinstance(requerido, bool):
+            return build_response(400, {'mensaje': 'El campo "requerido" es obligatorio y debe ser un booleano.'})
+
+        rows_affected = update_contactabilidad_requerido(cursor, RESOURCES["contactabilidad"], id_cliente, requerido)
+
+        if rows_affected > 0:
+            conn.commit()
+            return build_response(200, {'mensaje': 'El estado de requerido ha sido actualizado correctamente.'})
+        else:
+            conn.rollback()
+            return build_response(404, {'mensaje': 'No se encontró un registro de contactabilidad para el cliente especificado.'})
+
+    return build_response(404, {'mensaje': RESOURCE_NOT_FOUND_MSG})
 
 def handle_client_data_post(conn, cursor, body_str):
     """Maneja la inserción/actualización de datos de clientes"""

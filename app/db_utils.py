@@ -424,3 +424,25 @@ def get_client_info(cursor, contactabilidad_config, productos_config, id_cliente
         raise
 
     return result
+
+
+def update_contactabilidad_requerido(cursor, contactabilidad_config, id_cliente, requerido):
+    """
+    Actualiza el campo 'requerido' en la tabla de contactabilidad para un cliente específico.
+    Args:
+        cursor: Cursor de la base de datos.
+        contactabilidad_config: Configuración del recurso de contactabilidad.
+        id_cliente: UUID del cliente a actualizar.
+        requerido: Valor booleano para el campo 'requerido'.
+    Returns:
+        int: El número de filas afectadas por la operación de actualización.
+    """
+    table_name = f'"{contactabilidad_config["db_schema"]}"."{contactabilidad_config["db_table"]}"'
+    sql = f"UPDATE {table_name} SET requerido = %s WHERE id_cliente = %s"
+
+    try:
+        cursor.execute(sql, (requerido, id_cliente))
+        return cursor.rowcount
+    except Exception as e:
+        logger.error(f"Error al actualizar contactabilidad para id_cliente {id_cliente}: {e}")
+        raise
