@@ -426,22 +426,37 @@ def get_client_info(cursor, contactabilidad_config, productos_config, id_cliente
     return result
 
 
-def update_contactabilidad_requerido(cursor, contactabilidad_config, id_cliente, requerido):
+def update_contactabilidad_fields(cursor, contactabilidad_config, id_cliente, fields_to_update):
     """
-    Actualiza el campo 'requerido' en la tabla de contactabilidad para un cliente específico.
+    Actualiza dinámicamente los campos en la tabla de contactabilidad para un cliente.
     Args:
         cursor: Cursor de la base de datos.
         contactabilidad_config: Configuración del recurso de contactabilidad.
         id_cliente: UUID del cliente a actualizar.
-        requerido: Valor booleano para el campo 'requerido'.
+        fields_to_update: Un diccionario con los campos a actualizar y sus nuevos valores.
     Returns:
-        int: El número de filas afectadas por la operación de actualización.
+        int: El número de filas afectadas.
     """
+    ALLOWED_FIELDS = {
+        "requerido_correo",
+        "requerido_notificacion",
+        "requerido_celular"
+    }
+
+    # Filtrar solo los campos permitidos
+    update_data = {k: v for k, v in fields_to_update.items() if k in ALLOWED_FIELDS}
+
+    if not update_data:
+        raise ValueError("No se proporcionaron campos válidos para actualizar.")
+
+    set_clauses = ", ".join([f'"{key}" = %s' for key in update_data.keys()])
+    values = list(update_data.values()) + [id_cliente]
+
     table_name = f'"{contactabilidad_config["db_schema"]}"."{contactabilidad_config["db_table"]}"'
-    sql = f"UPDATE {table_name} SET requerido = %s WHERE id_cliente = %s"
+    sql = f"UPDATE {table_name} SET {set_clauses} WHERE id_cliente = %s"
 
     try:
-        cursor.execute(sql, (requerido, id_cliente))
+        cursor.execute(sql, tuple(values))
         return cursor.rowcount
     except Exception as e:
         logger.error(f"Error al actualizar contactabilidad para id_cliente {id_cliente}: {e}")

@@ -9,7 +9,7 @@ from app.db_utils import (
     get_paginated_data,
     validate_and_process_client_data,
     validate_data,
-    update_contactabilidad_requerido
+    update_contactabilidad_fields
 )
 from app.db_connection import conexion_bd
 from app.shared_utils import build_response
@@ -164,20 +164,30 @@ def handle_contactabilidad_resource(conn, cursor, event, method, path_parts):
     """Maneja las solicitudes para el recurso de contactabilidad."""
     if method == 'PATCH' and len(path_parts) == 3 and path_parts[2] == 'requerido':
         id_cliente = path_parts[1]
-        body = json.loads(event.get('body', '{}'))
-        requerido = body.get('requerido')
-
-        if not id_cliente:
-            return build_response(400, {'mensaje': 'Se requiere id_cliente en la URL.'})
         try:
             uuid.UUID(id_cliente)
         except ValueError:
             return build_response(400, {'mensaje': 'ID de cliente no válido.'})
 
-        if not isinstance(requerido, bool):
-            return build_response(400, {'mensaje': 'El campo "requerido" es obligatorio y debe ser un booleano.'})
+        body = json.loads(event.get('body', '{}'))
+        if not isinstance(body, dict) or not body:
+            return build_response(400, {'mensaje': 'El cuerpo de la solicitud debe ser un objeto JSON no vacío.'})
 
-        rows_affected = update_contactabilidad_requerido(cursor, RESOURCES["contactabilidad"], id_cliente, requerido)
+        ALLOWED_FIELDS = {"requerido_correo", "requerido_notificacion", "requerido_celular"}
+
+        # Validar que todas las llaves en el body sean permitidas y sus valores booleanos
+        fields_to_update = {}
+        for key, value in body.items():
+            if key not in ALLOWED_FIELDS:
+                return build_response(400, {'mensaje': f'El campo "{key}" no es actualizable.'})
+            if not isinstance(value, bool):
+                return build_response(400, {'mensaje': f'El valor para "{key}" debe ser un booleano.'})
+            fields_to_update[key] = value
+
+        if not fields_to_update:
+             return build_response(400, {'mensaje': 'No se proporcionaron campos válidos para actualizar.'})
+
+        rows_affected = update_contactabilidad_fields(cursor, RESOURCES["contactabilidad"], id_cliente, fields_to_update)
 
         if rows_affected > 0:
             conn.commit()
