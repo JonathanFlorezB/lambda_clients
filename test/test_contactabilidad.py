@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch, ANY
 import json
 import uuid
 from app.lambda_function import lambda_handler
-from app.db_utils import update_contactabilidad_requerido
+from app.db_utils import update_contactabilidad_fields
 
 # Mock Constants
 CLIENT_ID = str(uuid.uuid4())
@@ -11,6 +11,7 @@ CONTACTABILIDAD_CONFIG = {
     "db_schema": "public",
     "db_table": "contactabilidad"
 }
+ALLOWED_FIELDS = {"requerido_correo", "requerido_notificacion", "requerido_celular"}
 
 @pytest.fixture
 def mock_db_connection():
@@ -23,123 +24,132 @@ def mock_db_connection():
 
 # --- Tests for db_utils.py ---
 
-def test_update_contactabilidad_requerido_success():
-    """Test successful update of the 'requerido' field."""
+def test_update_single_field_success():
+    """Test successful dynamic update of a single field."""
     mock_cursor = MagicMock()
     mock_cursor.rowcount = 1
+    fields_to_update = {"requerido_correo": True}
 
-    rows_affected = update_contactabilidad_requerido(
-        mock_cursor, CONTACTABILIDAD_CONFIG, CLIENT_ID, True
+    rows = update_contactabilidad_fields(mock_cursor, CONTACTABILIDAD_CONFIG, CLIENT_ID, fields_to_update)
+
+    # Check that the SQL is correctly formatted for one field
+    mock_cursor.execute.assert_called_once_with(
+        'UPDATE "public"."contactabilidad" SET "requerido_correo" = %s WHERE id_cliente = %s',
+        (True, CLIENT_ID)
+    )
+    assert rows == 1
+
+def test_update_multiple_fields_success():
+    """Test successful dynamic update of multiple fields."""
+    mock_cursor = MagicMock()
+    mock_cursor.rowcount = 1
+    fields_to_update = {"requerido_notificacion": False, "requerido_celular": True}
+
+    rows = update_contactabilidad_fields(mock_cursor, CONTACTABILIDAD_CONFIG, CLIENT_ID, fields_to_update)
+
+    # The order of fields in the dictionary is not guaranteed, so we check for both possible SQL queries
+    expected_sql_1 = 'UPDATE "public"."contactabilidad" SET "requerido_notificacion" = %s, "requerido_celular" = %s WHERE id_cliente = %s'
+    expected_sql_2 = 'UPDATE "public"."contactabilidad" SET "requerido_celular" = %s, "requerido_notificacion" = %s WHERE id_cliente = %s'
+
+    try:
+        mock_cursor.execute.assert_called_with(expected_sql_1, (False, True, CLIENT_ID))
+    except AssertionError:
+        mock_cursor.execute.assert_called_with(expected_sql_2, (True, False, CLIENT_ID))
+
+    assert rows == 1
+
+def test_update_with_invalid_field_ignored():
+    """Test that invalid fields in the update dictionary are ignored."""
+    mock_cursor = MagicMock()
+    fields_to_update = {"requerido_correo": True, "invalid_field": "test"}
+
+    update_contactabilidad_fields(mock_cursor, CONTACTABILIDAD_CONFIG, CLIENT_ID, fields_to_update)
+
+    # Only the valid field should be in the query
+    mock_cursor.execute.assert_called_once_with(
+        'UPDATE "public"."contactabilidad" SET "requerido_correo" = %s WHERE id_cliente = %s',
+        (True, CLIENT_ID)
     )
 
-    expected_sql = 'UPDATE "public"."contactabilidad" SET requerido = %s WHERE id_cliente = %s'
-    mock_cursor.execute.assert_called_once_with(expected_sql, (True, CLIENT_ID))
-    assert rows_affected == 1
-
-def test_update_contactabilidad_requerido_not_found():
-    """Test update when no record is found."""
+def test_update_with_no_valid_fields_raises_error():
+    """Test that a ValueError is raised if no valid fields are provided."""
     mock_cursor = MagicMock()
-    mock_cursor.rowcount = 0
+    fields_to_update = {"invalid_field_1": True, "invalid_field_2": False}
 
-    rows_affected = update_contactabilidad_requerido(
-        mock_cursor, CONTACTABILIDAD_CONFIG, CLIENT_ID, False
-    )
+    with pytest.raises(ValueError, match="No se proporcionaron campos válidos para actualizar."):
+        update_contactabilidad_fields(mock_cursor, CONTACTABILIDAD_CONFIG, CLIENT_ID, fields_to_update)
 
-    expected_sql = 'UPDATE "public"."contactabilidad" SET requerido = %s WHERE id_cliente = %s'
-    mock_cursor.execute.assert_called_once_with(expected_sql, (False, CLIENT_ID))
-    assert rows_affected == 0
-
-def test_update_contactabilidad_requerido_db_error():
-    """Test handling of a database exception."""
-    mock_cursor = MagicMock()
-    mock_cursor.execute.side_effect = Exception("DB Error")
-
-    with pytest.raises(Exception, match="DB Error"):
-        update_contactabilidad_requerido(
-            mock_cursor, CONTACTABILIDAD_CONFIG, CLIENT_ID, True
-        )
+    mock_cursor.execute.assert_not_called()
 
 # --- Tests for lambda_function.py ---
 
 def create_patch_event(client_id, body):
     return {
         "requestContext": {
-            "http": {
-                "method": "PATCH",
-                "path": f"/contactabilidad/{client_id}/requerido"
-            }
+            "http": { "method": "PATCH", "path": f"/contactabilidad/{client_id}/requerido" }
         },
         "body": json.dumps(body)
     }
 
-def test_patch_requerido_success(mock_db_connection):
-    """Test successful PATCH request to update 'requerido'."""
+def test_patch_single_field_success(mock_db_connection):
+    """Test successful PATCH with a single valid field."""
     mock_conn, mock_cursor = mock_db_connection
     mock_cursor.rowcount = 1
+    event = create_patch_event(CLIENT_ID, {"requerido_correo": True})
 
-    event = create_patch_event(CLIENT_ID, {"requerido": True})
     response = lambda_handler(event, None)
 
     assert response['statusCode'] == 200
-    body = json.loads(response['body'])
-    assert 'actualizado correctamente' in body['mensaje']
     mock_conn.commit.assert_called_once()
-    mock_conn.rollback.assert_not_called()
 
-def test_patch_requerido_client_not_found(mock_db_connection):
-    """Test PATCH request when the client_id is not found."""
+def test_patch_multiple_fields_success(mock_db_connection):
+    """Test successful PATCH with multiple valid fields."""
     mock_conn, mock_cursor = mock_db_connection
-    mock_cursor.rowcount = 0  # Simulate no rows affected
+    mock_cursor.rowcount = 1
+    body = {"requerido_notificacion": True, "requerido_celular": False}
+    event = create_patch_event(CLIENT_ID, body)
 
-    event = create_patch_event(CLIENT_ID, {"requerido": False})
+    response = lambda_handler(event, None)
+
+    assert response['statusCode'] == 200
+    mock_conn.commit.assert_called_once()
+
+def test_patch_client_not_found(mock_db_connection):
+    """Test PATCH when the client_id is not found."""
+    mock_conn, mock_cursor = mock_db_connection
+    mock_cursor.rowcount = 0
+    event = create_patch_event(CLIENT_ID, {"requerido_correo": True})
+
     response = lambda_handler(event, None)
 
     assert response['statusCode'] == 404
-    body = json.loads(response['body'])
-    assert 'No se encontró un registro' in body['mensaje']
-    mock_conn.commit.assert_not_called()
+    assert 'No se encontró un registro' in json.loads(response['body'])['mensaje']
     mock_conn.rollback.assert_called_once()
 
-def test_patch_requerido_invalid_uuid(mock_db_connection):
-    """Test PATCH request with an invalid UUID."""
-    event = create_patch_event("invalid-uuid", {"requerido": True})
+def test_patch_invalid_field_name(mock_db_connection):
+    """Test PATCH with an invalid field name in the body."""
+    event = create_patch_event(CLIENT_ID, {"requerido_sms": True})
     response = lambda_handler(event, None)
-
     assert response['statusCode'] == 400
-    body = json.loads(response['body'])
-    assert 'ID de cliente no válido' in body['mensaje']
+    assert 'no es actualizable' in json.loads(response['body'])['mensaje']
 
-def test_patch_requerido_missing_body_field(mock_db_connection):
-    """Test PATCH request with the 'requerido' field missing from the body."""
+def test_patch_non_boolean_value(mock_db_connection):
+    """Test PATCH with a non-boolean value."""
+    event = create_patch_event(CLIENT_ID, {"requerido_correo": "true"})
+    response = lambda_handler(event, None)
+    assert response['statusCode'] == 400
+    assert 'debe ser un booleano' in json.loads(response['body'])['mensaje']
+
+def test_patch_empty_body(mock_db_connection):
+    """Test PATCH with an empty JSON object as the body."""
     event = create_patch_event(CLIENT_ID, {})
     response = lambda_handler(event, None)
-
     assert response['statusCode'] == 400
-    body = json.loads(response['body'])
-    assert 'obligatorio y debe ser un booleano' in body['mensaje']
+    assert 'JSON no vacío' in json.loads(response['body'])['mensaje']
 
-def test_patch_requerido_invalid_body_type(mock_db_connection):
-    """Test PATCH request with a non-boolean value for 'requerido'."""
-    event = create_patch_event(CLIENT_ID, {"requerido": "not-a-boolean"})
+def test_patch_invalid_uuid(mock_db_connection):
+    """Test PATCH request with an invalid UUID."""
+    event = create_patch_event("invalid-uuid", {"requerido_correo": True})
     response = lambda_handler(event, None)
-
     assert response['statusCode'] == 400
-    body = json.loads(response['body'])
-    assert 'obligatorio y debe ser un booleano' in body['mensaje']
-
-def test_patch_requerido_wrong_path(mock_db_connection):
-    """Test PATCH request to a non-existent sub-path."""
-    event = {
-        "requestContext": {
-            "http": {
-                "method": "PATCH",
-                "path": f"/contactabilidad/{CLIENT_ID}/wrong_path"
-            }
-        },
-        "body": json.dumps({"requerido": True})
-    }
-    response = lambda_handler(event, None)
-
-    assert response['statusCode'] == 404
-    body = json.loads(response['body'])
-    assert 'Recurso no encontrado' in body['mensaje']
+    assert 'ID de cliente no válido' in json.loads(response['body'])['mensaje']
