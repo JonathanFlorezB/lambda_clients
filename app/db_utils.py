@@ -15,8 +15,7 @@ def get_paginated_data(cursor, resource_config, query_params):
     if page < 1:
         page = 1
     offset = (page - 1) * resource_config["limit"]
-    table_name = f'"{resource_config["db_schema"]}"."{
-        resource_config["db_table"]}"'
+    table_name = f'"{resource_config["db_schema"]}"."{resource_config["db_table"]}"'
 
     where_clauses = []
     params = []
@@ -43,8 +42,7 @@ def get_paginated_data(cursor, resource_config, query_params):
         total_records / resource_config["limit"]) if total_records > 0 else 1
 
     data_params = params + [resource_config["limit"], offset]
-    select_sql = f"SELECT * FROM {table_name} {where_sql} ORDER BY {
-        resource_config['columns'][0]} ASC LIMIT %s OFFSET %s"
+    select_sql = f"SELECT * FROM {table_name} {where_sql} ORDER BY {resource_config['columns'][0]} ASC LIMIT %s OFFSET %s"
     cursor.execute(select_sql, tuple(data_params))
 
     column_names = [desc[0] for desc in cursor.description]
@@ -62,8 +60,7 @@ def get_paginated_data(cursor, resource_config, query_params):
 def validate_data(cursor, resource_config, data) -> Tuple[int, List[Dict]]:
     """Validar datos de clientes según acción (A, E, M)"""
     errors = []
-    table_name = f'"{resource_config["db_schema"]}"."{
-        resource_config["db_table"]}"'
+    table_name = f'"{resource_config["db_schema"]}"."{resource_config["db_table"]}"'
 
     errors = validate_actions(data)
     codigo_counts = count_codigo_occurrences(data)
@@ -129,8 +126,7 @@ def validate_item_fields(item: Dict, action: str, resource_config: Dict) -> Dict
     for field in required_fields:
         value = item.get(field)
         if value is None or (isinstance(value, str) and value.strip() == ""):
-            field_errors[field] = f"El campo '{
-                field}' es requerido para la acción '{action}'."
+            field_errors[field] = f"El campo '{field}' es requerido para la acción '{action}'."
     return field_errors
 
 
@@ -163,24 +159,19 @@ def validate_database_operations(cursor, item: Dict, action: str,
     field_errors = {}
 
     if action in ['M', 'E'] and 'codigo_identificacion' in item:
-        check_sql = f"SELECT COUNT(*) FROM {
-            table_name} WHERE codigo_identificacion = %s"
+        check_sql = f"SELECT COUNT(*) FROM {table_name} WHERE codigo_identificacion = %s"
         cursor.execute(check_sql, (item["codigo_identificacion"],))
         if cursor.fetchone()[0] == 0:
-            field_errors["codigo_identificacion"] = f"El codigo_identificacion '{
-                item['codigo_identificacion']}' no existe en la base de datos para {action}."
+            field_errors["codigo_identificacion"] = f"El codigo_identificacion '{item['codigo_identificacion']}' no existe en la base de datos para {action}."
 
     if action == 'A' and 'codigo_identificacion' in item:
         if codigo_counts.get(item["codigo_identificacion"], 0) > 1:
-            field_errors["codigo_identificacion"] = f"El codigo_identificacion '{
-                item['codigo_identificacion']}' está duplicado en la solicitud."
+            field_errors["codigo_identificacion"] = f"El codigo_identificacion '{item['codigo_identificacion']}' está duplicado en la solicitud."
         else:
-            check_sql = f"SELECT COUNT(*) FROM {
-                table_name} WHERE codigo_identificacion = %s"
+            check_sql = f"SELECT COUNT(*) FROM {table_name} WHERE codigo_identificacion = %s"
             cursor.execute(check_sql, (item["codigo_identificacion"],))
             if cursor.fetchone()[0] > 0:
-                field_errors["codigo_identificacion"] = f"El codigo_identificacion '{
-                    item['codigo_identificacion']}' ya existe en la base de datos (use acción M para modificar)."
+                field_errors["codigo_identificacion"] = f"El codigo_identificacion '{item['codigo_identificacion']}' ya existe en la base de datos (use acción M para modificar)."
 
     return field_errors
 
@@ -202,8 +193,7 @@ def validate_and_process_client_data(cursor, resource_config, data):
 def validate_client_data(cursor, resource_config, data):
     """Validar los datos del cliente"""
     errors = []
-    table_name = f'"{resource_config["db_schema"]}"."{
-        resource_config["db_table"]}"'
+    table_name = f'"{resource_config["db_schema"]}"."{resource_config["db_table"]}"'
 
     for index, item in enumerate(data):
         action = item.get('accion')
@@ -231,8 +221,7 @@ def validate_client_item(cursor, resource_config, table_name, item, action):
     for field in required_fields:
         value = item.get(field)
         if value is None or (isinstance(value, str) and value.strip() == ""):
-            field_errors[field] = f"El campo '{
-                field}' es requerido para la acción '{action}'."
+            field_errors[field] = f"El campo '{field}' es requerido para la acción '{action}'."
 
     # Validar existencia en BD para acciones M y E
     if action in ['M', 'E'] and 'codigo_identificacion' in item and not field_errors.get('codigo_identificacion'):
@@ -244,13 +233,11 @@ def validate_client_item(cursor, resource_config, table_name, item, action):
 
 def check_existence_in_db(cursor, table_name, codigo_identificacion, field_errors, action):
     """Verificar si un código de identificación existe en la base de datos"""
-    check_sql = f"SELECT COUNT(*) FROM {
-        table_name} WHERE codigo_identificacion = %s"
+    check_sql = f"SELECT COUNT(*) FROM {table_name} WHERE codigo_identificacion = %s"
     cursor.execute(check_sql, (codigo_identificacion,))
     if cursor.fetchone()[0] == 0:
         field_errors["codigo_identificacion"] = (
-            f"El codigo_identificacion '{
-                codigo_identificacion}' no existe en la base de datos para {action}."
+            f"El codigo_identificacion '{codigo_identificacion}' no existe en la base de datos para {action}."
         )
 
 
@@ -260,8 +247,7 @@ def process_valid_client_data(cursor, resource_config, data, validation_errors):
     updated = 0
     deleted = 0
     processing_errors = []
-    table_name = f'"{resource_config["db_schema"]}"."{
-        resource_config["db_table"]}"'
+    table_name = f'"{resource_config["db_schema"]}"."{resource_config["db_table"]}"'
 
     for index, item in enumerate(data):
         if any(e["fila"] == index + 1 for e in validation_errors):
@@ -335,8 +321,7 @@ def handle_update(cursor, resource_config, table_name, item, index):
             values.append(item[col])
 
     values.append(item["codigo_identificacion"])
-    sql = f"UPDATE {table_name} SET {
-        ', '.join(set_clauses)} WHERE codigo_identificacion = %s"
+    sql = f"UPDATE {table_name} SET {', '.join(set_clauses)} WHERE codigo_identificacion = %s"
     cursor.execute(sql, tuple(values))
 
     if cursor.rowcount > 0:
@@ -389,10 +374,8 @@ def get_client_info(cursor, contactabilidad_config, productos_config, id_cliente
     }
 
     # Consultar contactabilidad (1:1)
-    contactabilidad_table = f'"{contactabilidad_config["db_schema"]}"."{
-        contactabilidad_config["db_table"]}"'
-    contactabilidad_sql = f"SELECT * FROM {
-        contactabilidad_table} WHERE id_cliente = %s"
+    contactabilidad_table = f'"{contactabilidad_config["db_schema"]}"."{contactabilidad_config["db_table"]}"'
+    contactabilidad_sql = f"SELECT * FROM {contactabilidad_table} WHERE id_cliente = %s"
 
     try:
         cursor.execute(contactabilidad_sql, (id_cliente,))
@@ -406,10 +389,8 @@ def get_client_info(cursor, contactabilidad_config, productos_config, id_cliente
         raise
 
     # Consultar productos (1:N)
-    productos_table = f'"{productos_config["db_schema"]}"."{
-        productos_config["db_table"]}"'
-    productos_sql = f"SELECT * FROM {
-        productos_table} WHERE id_cliente = %s ORDER BY id"
+    productos_table = f'"{productos_config["db_schema"]}"."{productos_config["db_table"]}"'
+    productos_sql = f"SELECT * FROM {productos_table} WHERE id_cliente = %s ORDER BY id"
 
     try:
         cursor.execute(productos_sql, (id_cliente,))
