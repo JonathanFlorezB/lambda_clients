@@ -83,6 +83,48 @@ def test_update_with_no_valid_fields_raises_error():
 
 # --- Tests for lambda_function.py ---
 
+# Import the internal function to test it directly
+from app.lambda_function import _validate_contactabilidad_patch_body
+
+def test_validate_body_success_single_field():
+    """Test validator with a single valid field."""
+    body = {"requerido_correo": True}
+    fields, error = _validate_contactabilidad_patch_body(body)
+    assert error is None
+    assert fields == body
+
+def test_validate_body_success_multiple_fields():
+    """Test validator with multiple valid fields."""
+    body = {"requerido_correo": True, "requerido_notificacion": False}
+    fields, error = _validate_contactabilidad_patch_body(body)
+    assert error is None
+    assert fields == body
+
+def test_validate_body_empty():
+    """Test validator with an empty body."""
+    fields, error = _validate_contactabilidad_patch_body({})
+    assert fields is None
+    assert "JSON no vacío" in error
+
+def test_validate_body_invalid_key():
+    """Test validator with an invalid key."""
+    fields, error = _validate_contactabilidad_patch_body({"invalid_key": True})
+    assert fields is None
+    assert "no es actualizable" in error
+
+def test_validate_body_non_boolean_value():
+    """Test validator with a non-boolean value."""
+    fields, error = _validate_contactabilidad_patch_body({"requerido_correo": "true"})
+    assert fields is None
+    assert "debe ser un booleano" in error
+
+def test_validate_body_mixed_valid_and_invalid():
+    """Test validator with mixed valid and invalid keys."""
+    body = {"requerido_correo": True, "invalid_key": False}
+    fields, error = _validate_contactabilidad_patch_body(body)
+    assert fields is None
+    assert "no es actualizable" in error
+
 def create_patch_event(client_id, body):
     return {
         "requestContext": {
