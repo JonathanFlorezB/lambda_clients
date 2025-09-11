@@ -160,43 +160,54 @@ def handle_validation_post(cursor, body_str):
     status_code = 200 if valid_count > 0 or not errors else 400
     return build_response(status_code, response_body)
 
+def _validate_contactabilidad_patch_body(body):
+    """Valida el cuerpo de la solicitud para la actualización de contactabilidad."""
+    if not isinstance(body, dict) or not body:
+        return None, 'El cuerpo de la solicitud debe ser un objeto JSON no vacío.'
+
+    ALLOWED_FIELDS = {"requerido_correo", "requerido_notificacion", "requerido_celular"}
+
+    fields_to_update = {}
+    for key, value in body.items():
+        if key not in ALLOWED_FIELDS:
+            return None, f'El campo "{key}" no es actualizable.'
+        if not isinstance(value, bool):
+            return None, f'El valor para "{key}" debe ser un booleano.'
+        fields_to_update[key] = value
+
+    if not fields_to_update:
+         return None, 'No se proporcionaron campos válidos para actualizar.'
+
+    return fields_to_update, None
+
 def handle_contactabilidad_resource(conn, cursor, event, method, path_parts):
     """Maneja las solicitudes para el recurso de contactabilidad."""
-    if method == 'PATCH' and len(path_parts) == 3 and path_parts[2] == 'requerido':
-        id_cliente = path_parts[1]
-        try:
-            uuid.UUID(id_cliente)
-        except ValueError:
-            return build_response(400, {'mensaje': 'ID de cliente no válido.'})
+    if not (method == 'PATCH' and len(path_parts) == 3 and path_parts[2] == 'requerido'):
+        return build_response(404, {'mensaje': RESOURCE_NOT_FOUND_MSG})
 
-        body = json.loads(event.get('body', '{}'))
-        if not isinstance(body, dict) or not body:
-            return build_response(400, {'mensaje': 'El cuerpo de la solicitud debe ser un objeto JSON no vacío.'})
+    id_cliente = path_parts[1]
+    try:
+        uuid.UUID(id_cliente)
+    except ValueError:
+        return build_response(400, {'mensaje': INVALID_CLIENT_ID_MSG})
 
-        ALLOWED_FIELDS = {"requerido_correo", "requerido_notificacion", "requerido_celular"}
+    body = json.loads(event.get('body', '{}'))
+    fields_to_update, error_message = _validate_contactabilidad_patch_body(body)
 
-        # Validar que todas las llaves en el body sean permitidas y sus valores booleanos
-        fields_to_update = {}
-        for key, value in body.items():
-            if key not in ALLOWED_FIELDS:
-                return build_response(400, {'mensaje': f'El campo "{key}" no es actualizable.'})
-            if not isinstance(value, bool):
-                return build_response(400, {'mensaje': f'El valor para "{key}" debe ser un booleano.'})
-            fields_to_update[key] = value
+    if error_message:
+        return build_response(400, {'mensaje': error_message})
 
-        if not fields_to_update:
-             return build_response(400, {'mensaje': 'No se proporcionaron campos válidos para actualizar.'})
-
+    try:
         rows_affected = update_contactabilidad_fields(cursor, RESOURCES["contactabilidad"], id_cliente, fields_to_update)
-
         if rows_affected > 0:
             conn.commit()
             return build_response(200, {'mensaje': 'El estado de requerido ha sido actualizado correctamente.'})
         else:
             conn.rollback()
             return build_response(404, {'mensaje': 'No se encontró un registro de contactabilidad para el cliente especificado.'})
-
-    return build_response(404, {'mensaje': RESOURCE_NOT_FOUND_MSG})
+    except ValueError as e:
+        # Esto puede ocurrir si update_contactabilidad_fields no encuentra campos válidos.
+        return build_response(400, {'mensaje': str(e)})
 
 def handle_client_data_post(conn, cursor, body_str):
     """Maneja la inserción/actualización de datos de clientes"""
