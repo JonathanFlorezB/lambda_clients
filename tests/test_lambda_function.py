@@ -203,3 +203,118 @@ def test_handle_client_data_post_207_status(mock_db_connection, api_gateway_even
         body = json.loads(response["body"])
         assert body["inserted_count"] == 1
         assert len(body["errors"]) == 1
+
+def test_options_request(api_gateway_event):
+    """Test that an OPTIONS request returns a 200 response."""
+    event = api_gateway_event("OPTIONS", "/")
+    response = lambda_handler(event, {})
+    assert response["statusCode"] == 200
+
+def test_post_clientes_invalid_action(mock_db_connection, api_gateway_event):
+    """Test POST to /clientes with an invalid action."""
+    client_data = [{"accion": "X", "codigo_identificacion": "C001"}]
+    event = api_gateway_event("POST", "/clientes", body=client_data)
+
+    response = lambda_handler(event, {})
+
+    assert response["statusCode"] == 400
+    body = json.loads(response["body"])
+    assert "Cada registro debe tener una acción válida" in body["mensaje"]
+
+def test_get_historial_transaccion_not_found(mock_db_connection, api_gateway_event):
+    """Test GET to /historial_transaccion when no history is found."""
+    client_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    event = api_gateway_event("GET", f"/historial_transaccion/{client_id}")
+
+    with patch('app.lambda_function.get_paginated_data') as mock_get_data:
+        mock_get_data.return_value = {"data": [], "pagination": {"totalRecords": 0}}
+
+        response = lambda_handler(event, {})
+
+        assert response["statusCode"] == 404
+
+def test_client_info_resource_unsupported_method(mock_db_connection, api_gateway_event):
+    """Test an unsupported method to /informacionCliente returns 404."""
+    client_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    event = api_gateway_event("PUT", f"/informacionCliente/{client_id}")
+    response = lambda_handler(event, {})
+    assert response["statusCode"] == 404
+
+@pytest.mark.parametrize("body_data, expected_message", [
+    ({}, "El cuerpo de la solicitud debe ser un objeto JSON no vacío."),
+    ({"invalid_field": True}, 'El campo "invalid_field" no es actualizable.'),
+    ({"requerido_correo": "not-a-boolean"}, 'El valor para "requerido_correo" debe ser un booleano.'),
+    ({"invalid_field": True, "another_invalid": "abc"}, 'El campo "invalid_field" no es actualizable.')
+])
+def test_patch_contactabilidad_invalid_body(mock_db_connection, api_gateway_event, body_data, expected_message):
+    """Test PATCH to /contactabilidad with various invalid bodies."""
+    client_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    event = api_gateway_event("PATCH", f"/contactabilidad/{client_id}/requerido", body=body_data)
+    response = lambda_handler(event, {})
+    assert response["statusCode"] == 400
+    assert expected_message in json.loads(response["body"])["mensaje"]
+
+def test_patch_contactabilidad_zero_rows_affected(mock_db_connection, api_gateway_event):
+    """Test PATCH to /contactabilidad that affects zero rows."""
+    client_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    body_data = {"requerido_correo": True}
+    event = api_gateway_event("PATCH", f"/contactabilidad/{client_id}/requerido", body=body_data)
+
+    with patch('app.lambda_function.update_contactabilidad_fields') as mock_update:
+        mock_update.return_value = 0 # rows_affected
+
+        response = lambda_handler(event, {})
+
+        assert response["statusCode"] == 404
+
+def test_patch_contactabilidad_invalid_uuid(mock_db_connection, api_gateway_event):
+    """Test PATCH to /contactabilidad with an invalid client UUID."""
+    event = api_gateway_event("PATCH", "/contactabilidad/invalid-uuid/requerido", body={"requerido_correo": True})
+    response = lambda_handler(event, {})
+    assert response["statusCode"] == 400
+    assert "ID de cliente no válido" in json.loads(response["body"])["mensaje"]
+
+def test_handle_contactabilidad_resource_404(mock_db_connection, api_gateway_event):
+    """Test that a non-PATCH method to /contactabilidad/.../requerido returns 404."""
+    client_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    event = api_gateway_event("GET", f"/contactabilidad/{client_id}/requerido")
+    response = lambda_handler(event, {})
+    assert response["statusCode"] == 404
+
+def test_patch_contactabilidad_value_error(mock_db_connection, api_gateway_event):
+    """Test PATCH to /contactabilidad that raises a ValueError from the update function."""
+    client_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    # This body is valid, so it will pass the initial validation
+    body_data = {"requerido_correo": True}
+    event = api_gateway_event("PATCH", f"/contactabilidad/{client_id}/requerido", body=body_data)
+
+    with patch('app.lambda_function.update_contactabilidad_fields') as mock_update:
+        # We mock the call that happens *after* validation to raise the error
+        mock_update.side_effect = ValueError("Forced DB error")
+
+        response = lambda_handler(event, {})
+
+        assert response["statusCode"] == 400
+        assert "Forced DB error" in json.loads(response["body"])["mensaje"]
+
+def test_validate_contactabilidad_no_valid_fields(mock_db_connection, api_gateway_event):
+    """Test _validate_contactabilidad_patch_body with no valid fields."""
+    client_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    body_data = {"another_invalid_field": "some_value"}
+    event = api_gateway_event("PATCH", f"/contactabilidad/{client_id}/requerido", body=body_data)
+
+    # This test will hit the `if not fields_to_update:` line in _validate_contactabilidad_patch_body
+    response = lambda_handler(event, {})
+    assert response["statusCode"] == 400
+    assert 'El campo "another_invalid_field" no es actualizable.' in json.loads(response["body"])["mensaje"]
+
+def test_post_clientes_validaciones_invalid_action(mock_db_connection, api_gateway_event):
+    """Test POST to /clientes/validaciones with an invalid action."""
+    client_data = [{"accion": "X", "codigo_identificacion": "C001"}]
+    event = api_gateway_event("POST", "/clientes/validaciones", body=client_data)
+
+    response = lambda_handler(event, {})
+
+    assert response["statusCode"] == 400
+    body = json.loads(response["body"])
+    assert "Cada registro debe tener una acción válida" in body["mensaje"]
