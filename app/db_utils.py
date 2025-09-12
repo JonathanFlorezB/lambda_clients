@@ -384,8 +384,7 @@ def get_client_info(cursor, contactabilidad_config, productos_config, id_cliente
             column_names = [desc[0] for desc in cursor.description]
             result["contactabilidad"] = dict(zip(column_names, row))
     except Exception as e:
-        logger.error(f"Error al consultar contactabilidad para id_cliente {
-                     id_cliente}: {e}")
+        logger.error(f"Error al consultar contactabilidad para id_cliente {id_cliente}: {e}")
         raise
 
     # Consultar productos (1:N)
@@ -400,8 +399,7 @@ def get_client_info(cursor, contactabilidad_config, productos_config, id_cliente
             result["productos"] = [dict(zip(column_names, row))
                                    for row in rows]
     except Exception as e:
-        logger.error(f"Error al consultar productos para id_cliente {
-                     id_cliente}: {e}")
+        logger.error(f"Error al consultar productos para id_cliente {id_cliente}: {e}")
         raise
 
     return result
@@ -442,3 +440,4 @@ def update_contactabilidad_fields(cursor, contactabilidad_config, id_cliente, fi
     except Exception as e:
         logger.error(f"Error al actualizar contactabilidad para id_cliente {id_cliente}: {e}")
         raise
+
